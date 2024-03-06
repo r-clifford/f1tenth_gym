@@ -25,6 +25,7 @@ Author: Hongrui Zheng
 """
 
 # gym imports
+from queue import Queue
 import gymnasium as gym
 
 from f110_gym.envs.action import (CarAction,
@@ -44,6 +45,9 @@ from f110_gym.envs.utils import deep_update
 
 # others
 import numpy as np
+
+from f1tenth_planning.control.pure_pursuit.pure_pursuit import PurePursuitPlanner
+from f1tenth_planning.control.stanley.stanley import StanleyPlanner
 
 
 class F110Env(gym.Env):
@@ -93,7 +97,7 @@ class F110Env(gym.Env):
         # Configuration
         self.config = self.default_config()
         self.configure(config)
-
+        self.reward_function = config["reward_function"]
         self.seed = self.config["seed"]
         self.map = self.config["map"]
         self.params = self.config["params"]
@@ -187,6 +191,14 @@ class F110Env(gym.Env):
             render_mode=render_mode,
             render_fps=self.metadata["render_fps"],
         )
+        # TODO: organize
+        raceline = self.track.raceline
+        waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1)
+        self.pure_pursuit = PurePursuitPlanner(waypoints=waypoints)
+        self.stanley = StanleyPlanner(waypoints=waypoints)
+        self.steer_history = Queue(5)
+        for _ in range(5):
+            self.steer_history.put(0)
 
     @classmethod
     def default_config(cls) -> dict:
@@ -323,7 +335,11 @@ class F110Env(gym.Env):
         obs = self.observation_type.observe()
 
         # times
-        reward = self.timestep
+        avg_steer = np.array(list(self.steer_history.queue)).mean()
+        self.steer_history.get()
+        self.steer_history.put(action[0][0])
+        target_steer, target_speed = self.stanley.plan(obs["agent_0"]["pose_x"], obs["agent_0"]["pose_y"], obs["agent_0"]["pose_theta"], obs["agent_0"]["linear_vel_x"])
+        reward = self.reward_function(obs, action, target_steer, target_speed, avg_steer)
         self.current_time = self.current_time + self.timestep
 
         # update data member
@@ -346,6 +362,11 @@ class F110Env(gym.Env):
         done, toggle_list = self._check_done()
         truncated = False
         info = {"checkpoint_done": toggle_list}
+        # TODO: add more configuration for reset
+        # reset after 2 laps
+        if obs["agent_0"]["lap_count"] >= 2:
+            print(f"RESET: {obs['agent_0']['lap_count']} laps in {self.lap_times}")
+            done = True
 
         return obs, reward, done, truncated, info
 
