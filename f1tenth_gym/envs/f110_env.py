@@ -363,10 +363,13 @@ class F110Env(gym.Env):
         truncated = False
         info = {"checkpoint_done": toggle_list}
         # TODO: add more configuration for reset
-        # reset after 2 laps
-        if obs["agent_0"]["lap_count"] >= 2:
-            print(f"RESET: {obs['agent_0']['lap_count']} laps in {self.lap_times}")
-            done = True
+        try:
+            # reset after 2 laps
+            if obs["agent_0"]["lap_count"] >= 2:
+                print(f"RESET: {obs['agent_0']['lap_count']} laps in {self.lap_times}")
+                done = True
+        except KeyError:
+            print("WARNING: lap_count not in observation")
 
         return obs, reward, done, truncated, info
 
