@@ -93,6 +93,10 @@ class OriginalObservation(Observation):
                 "lap_counts": gym.spaces.Box(
                     low=0.0, high=large_num, shape=(num_agents,), dtype=np.float32
                 ),
+                "lap_progress": gym.spaces.Box(
+                    low=0.0, high=1.0, shape=(num_agents,), dtype=np.float32
+                ),
+
             }
         )
 
@@ -116,12 +120,14 @@ class OriginalObservation(Observation):
             "collisions": [],
             "lap_times": [],
             "lap_counts": [],
+            "lap_progress": [],
         }
 
         for i, agent in enumerate(self.env.sim.agents):
             agent_scan = self.env.sim.agent_scans[i]
             lap_time = self.env.lap_times[i]
             lap_count = self.env.lap_counts[i]
+            lap_progress = self.env.agent_progress[i]
             collision = self.env.sim.collisions[i]
 
             x, y, theta = agent.state[xi], agent.state[yi], agent.state[yawi]
@@ -140,6 +146,7 @@ class OriginalObservation(Observation):
             observations["collisions"].append(collision)
             observations["lap_times"].append(lap_time)
             observations["lap_counts"].append(lap_count)
+            observations["lap_progress"].append(lap_progress)
 
         # cast to match observation space
         for key in observations.keys():
@@ -200,6 +207,10 @@ class FeaturesObservation(Observation):
                 "lap_count": gym.spaces.Box(
                     low=0.0, high=large_num, shape=(), dtype=np.float32
                 ),
+                "lap_progress": gym.spaces.Box(
+                    low=0.0, high=1.0, shape=(), dtype=np.float32
+                ),
+ 
             }
             complete_space[agent_id] = gym.spaces.Dict(
                 {k: agent_dict[k] for k in self.features}
@@ -221,6 +232,7 @@ class FeaturesObservation(Observation):
             agent = self.env.sim.agents[i]
             lap_time = self.env.lap_times[i]
             lap_count = self.env.lap_counts[i]
+            lap_progress = self.env.agent_progress[i]
 
             x, y, theta = agent.state[xi], agent.state[yi], agent.state[yawi]
             vx, vy = agent.state[vxi], 0.0
@@ -246,6 +258,7 @@ class FeaturesObservation(Observation):
                 "collision": int(agent.in_collision),
                 "lap_time": lap_time,
                 "lap_count": lap_count,
+                "lap_progress": lap_progress,
             }
 
             # add agent's observation to multi-agent observation

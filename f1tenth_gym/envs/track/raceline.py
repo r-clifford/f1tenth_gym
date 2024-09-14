@@ -7,6 +7,8 @@ import numpy as np
 from ..rendering import EnvRenderer
 from .cubic_spline import CubicSpline2D
 
+from . import utils
+
 
 class Raceline:
     """
@@ -57,6 +59,8 @@ class Raceline:
         self.ks = kappas
         self.vxs = velxs
         self.axs = accxs
+        self.progress = 0.0
+        self.end_threshold = 1.0 - 1/self.n
 
         # approximate track length by linear-interpolation of x,y waypoints
         # note: we could use 'ss' but sometimes it is normalized to [0,1], so we recompute it here
@@ -167,3 +171,26 @@ class Raceline:
         """
         points = np.stack([self.xs, self.ys], axis=1)
         e.render_closed_lines(points, color=(0, 128, 0), size=1)
+
+    def calculate_progress(self, pos: np.ndarray) -> float:
+        pairs = np.dstack((self.xs, self.ys))[0]
+        _, _, _, index = utils.nearest_point_on_trajectory(pos, pairs)
+        self.progress = index / self.n
+        return self.progress
+
+    def lap_finished(self) -> bool:
+        return self.progress >= self.end_threshold
+
+    def recenter(self, pos: np.ndarray):
+        pairs = np.dstack((self.xs, self.ys))[0]
+        # Get index of nearest point on centerline in starting position
+        _, _, _, index = utils.nearest_point_on_trajectory(pos, pairs)
+        # Rotate centerline positions such that the starting index is 0
+        if index > 0:
+            self.ss = np.roll(self.ss, -index)
+            self.xs = np.roll(self.xs, -index)
+            self.ys = np.roll(self.ys, -index)
+            self.ks = np.roll(self.ks, -index)
+            self.yaws = np.roll(self.yaws, -index)
+            self.vxs = np.roll(self.vxs, -index)
+            self.axs = np.roll(self.axs, -index)

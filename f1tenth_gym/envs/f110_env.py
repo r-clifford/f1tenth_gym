@@ -25,11 +25,11 @@ Author: Hongrui Zheng
 """
 
 # gym imports
+from copy import deepcopy
 from queue import Queue
 import gymnasium as gym
 
-from .action import (CarAction,
-                                  from_single_to_multi_action_space)
+from .action import CarAction, from_single_to_multi_action_space
 from .integrator import IntegratorType
 from .rendering import make_renderer
 
@@ -37,9 +37,9 @@ from .track import Track
 
 # base classes
 from .base_classes import Simulator, DynamicModel
-from .observation import observation_factory
+from .observation import observation_factory, OriginalObservation
 from .reset import make_reset_fn
-from .track import Track
+from .track import Track, utils
 from .utils import deep_update
 
 
@@ -93,6 +93,8 @@ class F110Env(gym.Env):
 
     def __init__(self, config: dict = None, render_mode=None, **kwargs):
         super().__init__()
+
+        self.full_obs = OriginalObservation(self)
 
         # Configuration
         self.config = self.default_config()
@@ -156,6 +158,12 @@ class F110Env(gym.Env):
                 self.map
             )  # load track in gym env for convenience
 
+
+        # Store centerlines for each agent to calculate lap progress
+        self.center_lines = [
+            deepcopy(self.track.centerline) for _ in range(self.num_agents)
+        ]
+
         # observations
         self.agent_ids = [f"agent_{i}" for i in range(self.num_agents)]
 
@@ -193,7 +201,9 @@ class F110Env(gym.Env):
         )
         # TODO: organize
         raceline = self.track.raceline
-        waypoints = np.stack([raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1)
+        waypoints = np.stack(
+            [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1
+        )
         self.pure_pursuit = PurePursuitPlanner(waypoints=waypoints)
         self.stanley = StanleyPlanner(waypoints=waypoints)
         self.steer_history = Queue(5)
@@ -256,7 +266,9 @@ class F110Env(gym.Env):
 
             if hasattr(self, "action_space"):
                 # if some parameters changed, recompute action space
-                self.action_type = CarAction(self.config["control_input"], params=self.params)
+                self.action_type = CarAction(
+                    self.config["control_input"], params=self.params
+                )
                 self.action_space = from_single_to_multi_action_space(
                     self.action_type.space, self.num_agents
                 )
@@ -330,6 +342,7 @@ class F110Env(gym.Env):
 
         # call simulation step
         self.sim.step(action)
+        # print(self.full_obs.observe()["lap_progress"])
 
         # observation
         obs = self.observation_type.observe()
@@ -338,12 +351,25 @@ class F110Env(gym.Env):
         avg_steer = np.array(list(self.steer_history.queue)).mean()
         self.steer_history.get()
         self.steer_history.put(action[0][0])
-        target_steer, target_speed = self.stanley.plan(obs["agent_0"]["pose_x"], obs["agent_0"]["pose_y"], obs["agent_0"]["pose_theta"], obs["agent_0"]["linear_vel_x"])
-        reward = self.reward_function(obs, action, target_steer, target_speed, avg_steer)
+        target_steer, target_speed = self.stanley.plan(
+            obs["agent_0"]["pose_x"],
+            obs["agent_0"]["pose_y"],
+            obs["agent_0"]["pose_theta"],
+            obs["agent_0"]["linear_vel_x"],
+        )
+        # target_steer, target_speed = self.pure_pursuit.plan(obs["agent_0"]["pose_x"], obs["agent_0"]["pose_y"], obs["agent_0"]["pose_theta"], 0.8)
+        reward = self.reward_function(
+            obs, action, target_steer, target_speed, avg_steer
+        )
         self.current_time = self.current_time + self.timestep
 
         # update data member
         self._update_state()
+
+        # Update lap progress data
+        for i, line in enumerate(self.center_lines):
+            point = np.array([self.poses_x[i], self.poses_y[i]], dtype=np.float32)
+            self.agent_progress[i] = line.calculate_progress(point)
 
         # rendering observation
         self.render_obs = {
@@ -363,13 +389,14 @@ class F110Env(gym.Env):
         truncated = False
         info = {"checkpoint_done": toggle_list}
         # TODO: add more configuration for reset
-        try:
-            # reset after 2 laps
-            if obs["agent_0"]["lap_count"] >= 2:
-                print(f"RESET: {obs['agent_0']['lap_count']} laps in {self.lap_times}")
-                done = True
-        except KeyError:
-            print("WARNING: lap_count not in observation")
+        # reset after 2 laps
+
+        for i, line in enumerate(self.center_lines):
+            self.lap_counts[i] += line.lap_finished()
+
+        if (self.lap_counts > 1).all():
+            print(f"{self.lap_counts} laps complete: {self.lap_times}")
+            done = True
 
         return obs, reward, done, truncated, info
 
@@ -425,6 +452,12 @@ class F110Env(gym.Env):
                 ],
             ]
         )
+
+        # Create centerlines for progress
+        self.agent_progress = np.zeros((self.num_agents,))
+        for i, _ in enumerate(self.center_lines):
+            point = np.array([self.start_xs[i], self.start_ys[i]], dtype=np.float32)
+            self.center_lines[i].recenter(point)
 
         # call reset to simulator
         self.sim.reset(poses)

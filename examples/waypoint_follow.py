@@ -278,6 +278,8 @@ class PurePursuitPlanner:
 
         return speed, steering_angle
 
+def reward(a,b,c,d,e):
+    return 0.1
 
 def main():
     """
@@ -291,11 +293,11 @@ def main():
         "vgain": 1,
     }
 
-    num_agents = 3
+    num_agents = 5
     env = gym.make(
         "f1tenth_gym:f1tenth-v0",
         config={
-            "map": "Spielberg",
+            "map": "Catalunya",
             "num_agents": num_agents,
             "timestep": 0.01,
             "integrator": "rk4",
@@ -304,6 +306,7 @@ def main():
             "observation_config": {"type": "kinematic_state"},
             "params": {"mu": 1.0},
             "reset_config": {"type": "rl_random_static"},
+            "reward_function": reward,
         },
         render_mode="human",
     )
