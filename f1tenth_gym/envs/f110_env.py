@@ -39,8 +39,9 @@ from .track import Track
 from .base_classes import Simulator, DynamicModel
 from .observation import observation_factory, OriginalObservation
 from .reset import make_reset_fn
-from .track import Track, utils
+from .track import Track
 from .utils import deep_update
+from .reward import DefaultReward
 
 
 # others
@@ -99,7 +100,7 @@ class F110Env(gym.Env):
         # Configuration
         self.config = self.default_config()
         self.configure(config)
-        self.reward_function = config["reward_function"]
+        self.reward_class = self.config["reward_class"]
         self.seed = self.config["seed"]
         self.map = self.config["map"]
         self.params = self.config["params"]
@@ -204,11 +205,6 @@ class F110Env(gym.Env):
         waypoints = np.stack(
             [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1
         )
-        self.pure_pursuit = PurePursuitPlanner(waypoints=waypoints)
-        self.stanley = StanleyPlanner(waypoints=waypoints)
-        self.steer_history = Queue(5)
-        for _ in range(5):
-            self.steer_history.put(0)
 
     @classmethod
     def default_config(cls) -> dict:
@@ -254,6 +250,7 @@ class F110Env(gym.Env):
             "control_input": ["speed", "steering_angle"],
             "observation_config": {"type": None},
             "reset_config": {"type": None},
+            "reward_class": DefaultReward(),
         }
 
     def configure(self, config: dict) -> None:
@@ -346,21 +343,10 @@ class F110Env(gym.Env):
 
         # observation
         obs = self.observation_type.observe()
+        full_obs = self.full_obs.observe()
 
-        # times
-        avg_steer = np.array(list(self.steer_history.queue)).mean()
-        self.steer_history.get()
-        self.steer_history.put(action[0][0])
-        target_steer, target_speed = self.stanley.plan(
-            obs["agent_0"]["pose_x"],
-            obs["agent_0"]["pose_y"],
-            obs["agent_0"]["pose_theta"],
-            obs["agent_0"]["linear_vel_x"],
-        )
-        # target_steer, target_speed = self.pure_pursuit.plan(obs["agent_0"]["pose_x"], obs["agent_0"]["pose_y"], obs["agent_0"]["pose_theta"], 0.8)
-        reward = self.reward_function(
-            obs, action, target_steer, target_speed, avg_steer
-        )
+        reward = self.reward_class.reward(full_obs, action)
+
         self.current_time = self.current_time + self.timestep
 
         # update data member

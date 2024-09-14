@@ -278,8 +278,6 @@ class PurePursuitPlanner:
 
         return speed, steering_angle
 
-def reward(a,b,c,d,e):
-    return 0.1
 
 def main():
     """
@@ -306,7 +304,6 @@ def main():
             "observation_config": {"type": "kinematic_state"},
             "params": {"mu": 1.0},
             "reset_config": {"type": "rl_random_static"},
-            "reward_function": reward,
         },
         render_mode="human",
     )
