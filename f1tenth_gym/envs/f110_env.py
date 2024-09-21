@@ -104,6 +104,7 @@ class F110Env(gym.Env):
         self.seed = self.config["seed"]
         self.map = self.config["map"]
         self.params = self.config["params"]
+        self.base_params = deepcopy(self.params)
         self.num_agents = self.config["num_agents"]
         self.timestep = self.config["timestep"]
         self.ego_idx = self.config["ego_idx"]
@@ -111,6 +112,7 @@ class F110Env(gym.Env):
         self.model = DynamicModel.from_string(self.config["model"])
         self.observation_config = self.config["observation_config"]
         self.action_type = CarAction(self.config["control_input"], params=self.params)
+        self.params_randomizer = self.config.get("params_randomiser", None)
 
         # radius to consider done
         self.start_thresh = 0.5  # 10cm
@@ -159,7 +161,6 @@ class F110Env(gym.Env):
                 self.map
             )  # load track in gym env for convenience
 
-
         # Store centerlines for each agent to calculate lap progress
         self.center_lines = [
             deepcopy(self.track.centerline) for _ in range(self.num_agents)
@@ -199,11 +200,6 @@ class F110Env(gym.Env):
             agent_ids=self.agent_ids,
             render_mode=render_mode,
             render_fps=self.metadata["render_fps"],
-        )
-        # TODO: organize
-        raceline = self.track.raceline
-        waypoints = np.stack(
-            [raceline.xs, raceline.ys, raceline.vxs, raceline.yaws], axis=1
         )
 
     @classmethod
@@ -345,7 +341,11 @@ class F110Env(gym.Env):
         obs = self.observation_type.observe()
         full_obs = self.full_obs.observe()
 
-        reward = self.reward_class.reward(full_obs, action)
+        reward, term = self.reward_class.reward(full_obs, action)
+
+        # There seems to be some type of physics bug that allows the car
+        # to spin at a very high rate
+        term = term or (np.abs(full_obs["ang_vels_z"]) > 100).any()
 
         self.current_time = self.current_time + self.timestep
 
@@ -375,16 +375,19 @@ class F110Env(gym.Env):
         truncated = False
         info = {"checkpoint_done": toggle_list}
         # TODO: add more configuration for reset
-        # reset after 2 laps
+        # reset after 1 laps
 
         for i, line in enumerate(self.center_lines):
             self.lap_counts[i] += line.lap_finished()
 
-        if (self.lap_counts > 1).all():
+        if (self.lap_counts > 0).all():
             print(f"{self.lap_counts} laps complete: {self.lap_times}")
             done = True
 
-        return obs, reward, done, truncated, info
+        info["progress"] = self.agent_progress
+        info["laptimes"] = self.lap_times
+
+        return obs, reward, done or term, truncated, info
 
     def reset(self, seed=None, options=None):
         """
@@ -403,6 +406,9 @@ class F110Env(gym.Env):
         if seed is not None:
             np.random.seed(seed=seed)
         super().reset(seed=seed)
+        if self.params_randomizer:
+            self.params = self.params_randomizer(self.base_params)
+            self.sim.update_params(self.params)
 
         # reset counters and data members
         self.current_time = 0.0
@@ -447,6 +453,9 @@ class F110Env(gym.Env):
 
         # call reset to simulator
         self.sim.reset(poses)
+
+        # reset reward class if needed
+        self.reward_class.reset()
 
         # get no input observations
         action = np.zeros((self.num_agents, 2))

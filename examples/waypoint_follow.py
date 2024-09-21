@@ -4,6 +4,7 @@ from typing import Tuple
 import gymnasium as gym
 import numpy as np
 from numba import njit
+from eml_rl.Reward import ProgressReward
 
 
 """
@@ -291,11 +292,12 @@ def main():
         "vgain": 1,
     }
 
-    num_agents = 5
+    num_agents = 1
     env = gym.make(
         "f1tenth_gym:f1tenth-v0",
         config={
-            "map": "Catalunya",
+            "reward_class": ProgressReward(),
+            "map": "Oschersleben",
             "num_agents": num_agents,
             "timestep": 0.01,
             "integrator": "rk4",

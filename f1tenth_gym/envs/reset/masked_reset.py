@@ -14,7 +14,7 @@ class MaskedResetFn(ResetFn):
 
     def __init__(
         self,
-        reference_line: Raceline,
+        reference_line: list[Raceline],
         num_agents: int,
         move_laterally: bool,
         min_dist: float,
@@ -30,8 +30,9 @@ class MaskedResetFn(ResetFn):
 
     def sample(self) -> np.ndarray:
         waypoint_id = np.random.choice(np.where(self.mask)[0])
+        ref_line = np.random.choice(self.reference_line)
         poses = sample_around_waypoint(
-            reference_line=self.reference_line,
+            reference_line=ref_line,
             waypoint_id=waypoint_id,
             n_agents=self.n_agents,
             min_dist=self.min_dist,
@@ -44,7 +45,7 @@ class MaskedResetFn(ResetFn):
 class GridResetFn(MaskedResetFn):
     def __init__(
         self,
-        reference_line: Raceline,
+        reference_line: list[Raceline],
         num_agents: int,
         move_laterally: bool = True,
         use_centerline: bool = True,
@@ -66,10 +67,10 @@ class GridResetFn(MaskedResetFn):
 
     def get_mask(self) -> np.ndarray:
         # approximate the nr waypoints in the starting line
-        step_size = self.reference_line.length / self.reference_line.n
+        step_size = self.reference_line[0].length / self.reference_line[0].n
         n_wps = int(self.start_width / step_size)
 
-        mask = np.zeros(self.reference_line.n)
+        mask = np.zeros(self.reference_line[0].n)
         mask[:n_wps] = 1
         return mask.astype(bool)
 
@@ -85,7 +86,7 @@ class GridResetFn(MaskedResetFn):
 class AllTrackResetFn(MaskedResetFn):
     def __init__(
         self,
-        reference_line: Raceline,
+        reference_line: list[Raceline],
         num_agents: int,
         move_laterally: bool = True,
         shuffle: bool = True,
@@ -102,7 +103,7 @@ class AllTrackResetFn(MaskedResetFn):
         self.shuffle = shuffle
 
     def get_mask(self) -> np.ndarray:
-        return np.ones(self.reference_line.n).astype(bool)
+        return np.ones(self.reference_line[0].n).astype(bool)
 
     def sample(self) -> np.ndarray:
         poses = super().sample()
