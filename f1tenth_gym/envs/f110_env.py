@@ -100,6 +100,7 @@ class F110Env(gym.Env):
         # Configuration
         self.config = self.default_config()
         self.configure(config)
+        self.max_laps = self.config["max_laps"]
         self.reward_class = self.config["reward_class"]
         self.seed = self.config["seed"]
         self.map = self.config["map"]
@@ -247,6 +248,7 @@ class F110Env(gym.Env):
             "observation_config": {"type": None},
             "reset_config": {"type": None},
             "reward_class": DefaultReward(),
+            "max_laps": 1,
         }
 
     def configure(self, config: dict) -> None:
@@ -303,10 +305,10 @@ class F110Env(gym.Env):
                 self.near_starts[i] = False
                 self.toggle_list[i] += 1
             self.lap_counts[i] = self.toggle_list[i] // 2
-            if self.toggle_list[i] < 4:
+            if self.toggle_list[i] // 2 < 4:
                 self.lap_times[i] = self.current_time
 
-        done = (self.collisions[self.ego_idx]) or np.all(self.toggle_list >= 4)
+        done = (self.collisions[self.ego_idx]) or np.all(self.lap_counts >= self.max_laps)
 
         return bool(done), self.toggle_list >= 4
 
@@ -335,7 +337,6 @@ class F110Env(gym.Env):
 
         # call simulation step
         self.sim.step(action)
-        # print(self.full_obs.observe()["lap_progress"])
 
         # observation
         obs = self.observation_type.observe()
@@ -380,7 +381,7 @@ class F110Env(gym.Env):
         for i, line in enumerate(self.center_lines):
             self.lap_counts[i] += line.lap_finished()
 
-        if (self.lap_counts > 0).all():
+        if (self.lap_counts >= self.max_laps).all():
             print(f"{self.lap_counts} laps complete: {self.lap_times}")
             done = True
 
