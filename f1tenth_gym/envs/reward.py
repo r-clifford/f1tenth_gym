@@ -20,7 +20,7 @@ class Reward:
         """
         raise NotImplementedError()
 
-    def reset(self):
+    def reset(self, params: dict):
         """
         Reset reward provider
         """

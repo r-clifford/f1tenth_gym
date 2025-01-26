@@ -90,8 +90,7 @@ class F110Env(gym.Env):
     """
 
     # NOTE: change matadata with default rendering-modes, add definition of render_fps
-    metadata = {"render_modes": [
-        "human", "human_fast", "rgb_array"], "render_fps": 100}
+    metadata = {"render_modes": ["human", "human_fast", "rgb_array"], "render_fps": 100}
 
     def __init__(self, config: dict = None, render_mode=None, **kwargs):
         super().__init__()
@@ -102,7 +101,6 @@ class F110Env(gym.Env):
         self.config = self.default_config()
         self.configure(config)
         self.max_laps = self.config["max_laps"]
-        self.reward_class = self.config["reward_class"](self.config.copy())
         self.seed = self.config["seed"]
         self.map = self.config["map"]
         self.params = self.config["params"]
@@ -113,8 +111,7 @@ class F110Env(gym.Env):
         self.integrator = IntegratorType.from_string(self.config["integrator"])
         self.model = DynamicModel.from_string(self.config["model"])
         self.observation_config = self.config["observation_config"]
-        self.action_type = CarAction(
-            self.config["control_input"], params=self.params)
+        self.action_type = CarAction(self.config["control_input"], params=self.params)
         self.params_randomizer = self.config.get("params_randomiser", None)
 
         # radius to consider done
@@ -144,7 +141,6 @@ class F110Env(gym.Env):
         self.start_ys = np.zeros((self.num_agents,))
         self.start_thetas = np.zeros((self.num_agents,))
         self.start_rot = np.eye(2)
-
         # initiate stuff
         self.sim = Simulator(
             self.params,
@@ -169,14 +165,16 @@ class F110Env(gym.Env):
             deepcopy(self.track.centerline) for _ in range(self.num_agents)
         ]
 
+        reward_params = self.config.copy()
+        reward_params["track"] = self.track
+        self.reward_class = self.config["reward_class"](reward_params)
         # observations
         self.agent_ids = [f"agent_{i}" for i in range(self.num_agents)]
 
         assert (
             "type" in self.observation_config
         ), "observation_config must contain 'type' key"
-        self.observation_type = observation_factory(
-            env=self, **self.observation_config)
+        self.observation_type = observation_factory(env=self, **self.observation_config)
         self.observation_space = self.observation_type.space()
 
         # action space
@@ -356,8 +354,7 @@ class F110Env(gym.Env):
 
         # Update lap progress data
         for i, line in enumerate(self.center_lines):
-            point = np.array(
-                [self.poses_x[i], self.poses_y[i]], dtype=np.float32)
+            point = np.array([self.poses_x[i], self.poses_y[i]], dtype=np.float32)
             self.agent_progress[i] = line.calculate_progress(point)
 
         # rendering observation
@@ -451,15 +448,16 @@ class F110Env(gym.Env):
         # Create centerlines for progress
         self.agent_progress = np.zeros((self.num_agents,))
         for i, _ in enumerate(self.center_lines):
-            point = np.array(
-                [self.start_xs[i], self.start_ys[i]], dtype=np.float32)
+            point = np.array([self.start_xs[i], self.start_ys[i]], dtype=np.float32)
             self.center_lines[i].recenter(point)
 
         # call reset to simulator
         self.sim.reset(poses)
 
         # reset reward class if needed
-        self.reward_class.reset()
+        reward_params = self.config.copy()
+        reward_params["track"] = self.track
+        self.reward_class.reset(reward_params)
 
         # get no input observations
         action = np.zeros((self.num_agents, 2))
